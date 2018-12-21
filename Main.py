@@ -16,12 +16,12 @@ train_labels = []
 
 w_emb = None
 
-def hypertuning(params):
+def hypertuning_cycle(params):
     m = Model(
         w_emb,
         max_len,
         batch_size=params['batch_size'],
-        num_epochs=3,
+        num_epochs=10,
         num_layers=params['num_layers'],
         num_units=params['num_units'],
         learning_rate=params['learning_rate'],
@@ -33,6 +33,20 @@ def hypertuning(params):
     val = m.test(valid_sent, valid_labels, valid_token_lengths)
     del m
     return val
+
+def hypertuning():
+    space = {'batch_size': hp.choice('batch_size', [50, 100, 150]),
+             'num_layers': hp.choice('num_layers', [1, 2]),
+             'num_units': hp.choice('num_units', [128, 256, 512]),
+             'units3': hp.choice('units3', [64, 512]),
+             'learning_rate': hp.choice('learning_rate', [0.01, 0.001, 0.0001, 0.003]),
+             'word_dropout': hp.choice('word_dropout', [0, 0.2, 0.4, 0.5]),
+             'lstm_dropout': hp.choice('lstm_dropout', [0, 0.2, 0.4, 0.5]),
+             }
+
+    best = fmin(hypertuning_cycle, space, algo=tpe.suggest, max_evals=15)
+    print(best)
+
 
 
 if __name__ == "__main__":
@@ -55,34 +69,23 @@ if __name__ == "__main__":
     train_sent = w_emb.create_indexed_sentences(train_sent, max_len)
 
     # inicializacia modelu
-    # batch_size = 100
-    # num_epochs = 10
-    # num_layers = 2
-    # num_units = 256
-    # learning_rate = 0.003
-    # word_dropout = 0.4
-    # lstm_dropout = 0.4
+    batch_size = 100
+    num_epochs = 10
+    num_layers = 2
+    num_units = 256
+    learning_rate = 0.003
+    word_dropout = 0.4
+    lstm_dropout = 0.4
 
-    space = {'batch_size': hp.choice('batch_size', [50, 100, 150]),
-             'num_layers': hp.choice('num_layers', [1, 2]),
-             'num_units': hp.choice('num_units', [128, 256, 512]),
-             'units3': hp.choice('units3', [64, 512]),
-             'learning_rate': hp.choice('learning_rate', [0.01, 0.001, 0.0001, 0.003]),
-             'word_dropout': hp.choice('word_dropout', [0, 0.2, 0.4, 0.5]),
-             'lstm_dropout': hp.choice('lstm_dropout', [0, 0.2, 0.4, 0.5]),
-             }
-
-    best = fmin(hypertuning, space, algo=tpe.suggest, max_evals=15)
-    print(best)
-    # m = Model(
-    #     w_emb,
-    #     max_len,
-    #     batch_size=batch_size,
-    #     num_epochs=num_epochs,
-    #     num_layers=num_layers,
-    #     num_units=num_units,
-    #     learning_rate=learning_rate,
-    #     word_dropout=word_dropout,
-    #     lstm_dropout=lstm_dropout)
-    #
-    # m.train(train_sent, train_labels, train_token_lengths)
+    m = Model(
+        w_emb,
+        max_len,
+        batch_size=batch_size,
+        num_epochs=num_epochs,
+        num_layers=num_layers,
+        num_units=num_units,
+        learning_rate=learning_rate,
+        word_dropout=word_dropout,
+        lstm_dropout=lstm_dropout)
+   
+    m.train(train_sent, train_labels, train_token_lengths)

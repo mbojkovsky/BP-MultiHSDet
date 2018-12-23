@@ -13,10 +13,12 @@ class Model:
                num_units=256,
                learning_rate=0.001,
                word_dropout=0.4,
-               lstm_dropout=0.4
+               lstm_dropout=0.4,
+               adv_lambda=0.5
                ):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    tf.reset_default_graph()
 
     # hyperparamters
     self.batch_size = batch_size
@@ -24,16 +26,16 @@ class Model:
     self.learning_rate = learning_rate
     self.num_layers = num_layers
     self.num_units = num_units
-    self.word_dropout = 1 - word_dropout
-    self.lstm_dropout = 1 - lstm_dropout
+    # self.word_dropout = word_dropout
+    self.lstm_dropout = lstm_dropout
+    self.adv_lambda = adv_lambda
 
     self.embedder = embedder
-
-    tf.reset_default_graph()
 
     # inputs
     self.x = tf.placeholder(tf.int32, [None, max_len])
     self.y = tf.placeholder(tf.int64, [None])
+    self.lang_labels = tf.placeholder(tf.int64, [None])
     self.tokens_length = tf.placeholder(tf.int32, [None])
 
     # elmo
@@ -46,11 +48,17 @@ class Model:
     self.embedding = tf.nn.embedding_lookup(self.elmo_dic, self.x)
 
     # multilingual feature extractor for adversarial learning
-    self.feature_l1 = tf.dense(self.embedding, 2048, activation=tf.nn.relu)
-    self.feature_out = tf.dense(self.feature_l1, 1024, activation=tf.nn.relu)
+    self.feature_l1 = tf.layers.dense(self.embedding, 2048, activation=tf.nn.relu)
+    self.feature_out = tf.layers.dense(self.feature_l1, 1024, activation=tf.nn.relu)
 
     # language discriminator
-
+    # dopredu mi ide 1 * self.feature_out; dozadu mi ide -adv_lambda * self.feature_out
+    # todo: sem mozno LSTM namiesto dense layeru?
+    self.gradient_reversal = tf.stop_gradient((1 + self.adv_lambda) * self.feature_out) - self.adv_lambda * self.feature_out
+    self.language_disc_l1 = tf.layers.dense(self.gradient_reversal, 1024, activation=tf.nn.leaky_relu)
+    self.language_disc_out = tf.layers.dense(self.language_disc_l1, 2)
+    self.disc_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.language_disc_out,
+                                                                                   labels=self.lang_labels))
 
     # cell and layers definitions
     self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(self.num_units)
@@ -65,14 +73,17 @@ class Model:
                                                                           dtype=tf.float32,
                                                                           sequence_length=self.tokens_length
                                                                           )
-    self.dropped_outputs = tf.nn.dropout(self.outputs, self.lstm_dropout)
+    self.dropped_outputs = tf.layers.dropout(self.outputs, self.lstm_dropout)
 
     # TODO attention here
+
+    """
     # data manipulation before dense layer
     self.pooled = tf.math.reduce_mean(self.dropped_outputs, axis=1)
     self.flat = tf.layers.flatten(self.pooled)
 
     self.logits = tf.layers.dense(self.flat, units=2)
+    """
 
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
                                                                                  labels=self.y))

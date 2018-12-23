@@ -1,24 +1,24 @@
 import numpy as np
 
 class Embedder:
-    def __init__(self, dim, file):
+    def __init__(self, dim):
         self.dim = dim
-        self.file = file
         self.word2idx = dict()
-        self.weights = []
+        self.weights = None
+        self.index = 1
 
-    def load_embeddings(self):
-        index = 1
-        self.weights.append(np.zeros(1024))
-        with open('./data/' + self.file, 'r') as file:
+    def load_embeddings(self, file_name, sep=' '):
+        weights = []
+        weights.append(np.zeros(1024))
+        with open('./data/' + file_name, 'r') as file:
             for line in file:
-                values = line.split('\t')
-                if values[0] not in self.word2idx and len(values[1:]) == 1024:
-                    self.word2idx[values[0]] = index
-                    self.weights.append(values[1:])
-                    index += 1
+                values = line.split(sep)
+                if values[0] not in self.word2idx and len(values[1:]) == self.dim:
+                    self.word2idx[values[0]] = self.index
+                    weights.append(np.array(values[1:], dtype=np.float32))
+                    self.index += 1
 
-        self.weights = np.asarray(self.weights)
+        self.weights = np.array(weights)
 
     def create_indexed_sentences(self, sentences, pad_size=70):
         indexed = list(map(lambda sent: [self.word2idx[word] for word in sent], sentences))

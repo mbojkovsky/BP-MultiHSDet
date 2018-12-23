@@ -1,4 +1,3 @@
-import nltk
 from nltk.tokenize import word_tokenize
 import re
 from functools import reduce
@@ -29,21 +28,16 @@ class TextProcessor:
 
         basic_t = []
         if lang == 'en':
-            basic_t = [str(token) for token in self.nlp_en(tweet)]
+            basic_t = word_tokenize(tweet)
         else:
-            basic_t = [str(token) for token in self.nlp_es(tweet)]
+            basic_t = [str(token) for token in self.nlp_es(tweet) if not token.is_stop]
 
         # vymazem vsetky samostatne symboly
         filtered_lowercased = [w.lower() for w in basic_t if re.match(r'[a-zA-Z0-9]+', w)]
 
-        # replace numbers with <num>
+        # replace numbers with <number>
         finished = list(map(lambda x: re.sub(r"^[.]?([0-9]+[.,]?)+\b", '<number>', x), filtered_lowercased))
-
-        if lang == 'en':
-            finished = map(lambda x: 'and' if x == 'amp' else x, finished)
-        else:
-            finished = map(lambda x: 'y' if x == 'amp' else x, finished)
-        return list(finished)
+        return finished
   
     # prechod datami a aplikacia process_line
     def prepare_sentences(self, data, lang='en'):

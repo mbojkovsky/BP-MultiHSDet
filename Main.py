@@ -2,7 +2,7 @@
 from Model import Model
 from FileHandler import FileHandler
 import Embedder as e
-from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
+from hyperopt import fmin, tpe, hp
 
 valid_token_lengths = []
 train_token_lengths = []
@@ -34,7 +34,8 @@ def hypertuning_cycle(params):
     del m
     return val
 
-def hypertuning():
+def hypertuning(max_evals):
+    # TODO cele prekopat
     space = {'batch_size': hp.choice('batch_size', [50, 100, 150]),
              'num_layers': hp.choice('num_layers', [1, 2]),
              'num_units': hp.choice('num_units', [128, 256, 512]),
@@ -44,49 +45,40 @@ def hypertuning():
              'lstm_dropout': hp.choice('lstm_dropout', [0, 0.2, 0.4, 0.5]),
              }
 
-    best = fmin(hypertuning_cycle, space, algo=tpe.suggest, max_evals=15)
+    best = fmin(hypertuning_cycle, space, algo=tpe.suggest, max_evals=max_evals)
     print(best)
 
 
-
 if __name__ == "__main__":
-    ft = FileHandler()
-    # ft.extract_sentences(lang='en', write=True, concat=True)
-    # ft.extract_sentences(lang='es', write=True, concat=True)
-    char_len = 0
-    word_count = 0
-    with open('text_only_es', 'r') as file:
-        for i, line in enumerate(file):
-            x = line.split('\t')
-            if len(x) > word_count:
-                word_count = len(x)
-            if len(x) == 480:
-                print(i)
-            tmp = max([len(y) for y in x])
-            if (tmp > char_len):
-                char_len = tmp
-
-    print(char_len)
-    print(word_count)
-
+    # TODO zmenit model train, nech berie aj veci do test
+    w_emb = e.Embedder(dim=1024)
+    w_emb.load_embeddings('dict_en', sep=' ')
     """
-    w_emb = e.Embedder(1024, 'elmo_en')
-    w_emb.load_embeddings()
+    print(w_emb.weights[1])
+    with open('dict_en', 'w') as file:
+        for i, x in zip(w_emb.weights[1:], w_emb.word2idx):
+            file.write(x)
+            file.write(' '.join([str(k) for k in i]))
+            file.write('\n')
+                """
+    w_emb.load_embeddings('dict_es', sep=' ')
 
     # load dataset
     ft = FileHandler()
-    valid_sent, train_sent = ft.extract_sentences('en', write=False, concat=False)
-    valid_labels, train_labels = ft.extract_labels('en')
-    del ft
+    valid_sent, train_sent = ft.extract_multilingual_sentences()
+    valid_labels, train_labels = ft.extract_multilingual_labels()
+    valid_lang_labels, train_lang_labels = ft.extract_language_labels()
+    print(len(valid_labels), len(train_lang_labels), valid_sent.shape, train_sent.shape, valid_labels.shape, train_labels.shape)
 
     # get token lengths
     valid_token_lengths = [len(sent) for sent in valid_sent]
     train_token_lengths = [len(sent) for sent in train_sent]
+    max_len = max(valid_token_lengths + train_token_lengths)
 
-    max_len = max(train_token_lengths + valid_token_lengths)
     # create indexed sentences
     valid_sent = w_emb.create_indexed_sentences(valid_sent, max_len)
     train_sent = w_emb.create_indexed_sentences(train_sent, max_len)
+    exit(1)
 
     # inicializacia modelu
     batch_size = 100
@@ -96,6 +88,7 @@ if __name__ == "__main__":
     learning_rate = 0.003
     word_dropout = 0.4
     lstm_dropout = 0.4
+
 
     m = Model(
         w_emb,
@@ -109,4 +102,3 @@ if __name__ == "__main__":
         lstm_dropout=lstm_dropout)
    
     m.train(train_sent, train_labels, train_token_lengths)
-"""

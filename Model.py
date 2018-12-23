@@ -1,4 +1,3 @@
-# tensorflow
 import tensorflow as tf
 import numpy as np
 from math import ceil
@@ -9,9 +8,9 @@ class Model:
                embedder,
                max_len,
                batch_size=100,
-               num_epochs=1,
+               num_epochs=10,
                num_layers=2,
-               num_units=70,
+               num_units=256,
                learning_rate=0.001,
                word_dropout=0.4,
                lstm_dropout=0.4
@@ -46,24 +45,31 @@ class Model:
       trainable=False)
     self.embedding = tf.nn.embedding_lookup(self.elmo_dic, self.x)
 
+    # multilingual feature extractor for adversarial learning
+    self.feature_l1 = tf.dense(self.embedding, 2048, activation=tf.nn.relu)
+    self.feature_out = tf.dense(self.feature_l1, 1024, activation=tf.nn.relu)
+
+    # language discriminator
+
+
     # cell and layers definitions
     self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(self.num_units)
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]
 
     # LSTM layers with dropout
-    self.dropped_words = tf.nn.dropout(self.embedding, self.word_dropout)
     self.outputs, self.output_state_fw, self.output_state_bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
                                                                           self.cells_fw,
                                                                           self.cells_bw,
-                                                                          self.embedding,
+                                                                          self.feature_out,
                                                                           dtype=tf.float32,
                                                                           sequence_length=self.tokens_length
                                                                           )
     self.dropped_outputs = tf.nn.dropout(self.outputs, self.lstm_dropout)
 
+    # TODO attention here
     # data manipulation before dense layer
-    self.pooled = tf.math.reduce_mean(self.outputs, axis=1)
+    self.pooled = tf.math.reduce_mean(self.dropped_outputs, axis=1)
     self.flat = tf.layers.flatten(self.pooled)
 
     self.logits = tf.layers.dense(self.flat, units=2)

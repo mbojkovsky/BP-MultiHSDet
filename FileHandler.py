@@ -6,9 +6,9 @@ class FileHandler():
   def __init__(self):
     self.tp = TextProcessor()
 
-  def extract_sentences(self, language='en', write=False, concat=True):
-    df = pd.read_csv('./raw_data/dev_' + language + '.tsv', delimiter='\t')
-    tdf = pd.read_csv('./raw_data/train_' + language + '.tsv', delimiter='\t')
+  def extract_sentences(self, lang='en', write=False, concat=True):
+    df = pd.read_csv('./raw_data/dev_' + lang + '.tsv', delimiter='\t')
+    tdf = pd.read_csv('./raw_data/train_' + lang + '.tsv', delimiter='\t')
 
     df = df.drop(columns=['AG', 'TR', 'id', 'HS'])
     tdf = tdf.drop(columns=['AG', 'TR', 'id', 'HS'])
@@ -19,14 +19,14 @@ class FileHandler():
     if concat:
       df = df.append(tdf, ignore_index=False)
       df = df.reset_index(drop=True)
-      df_sent = self.tp.prepare_sentences(df.text)
+      df_sent = self.tp.prepare_sentences(df.text, lang)
 
     else:
-      df_sent = self.tp.prepare_sentences(df.text)
-      tdf_sent = self.tp.prepare_sentences(tdf.text)
+      df_sent = self.tp.prepare_sentences(df.text, lang)
+      tdf_sent = self.tp.prepare_sentences(tdf.text, lang)
 
     if write and concat:
-      with open('text_only_' + language, 'w') as file:
+      with open('text_only_' + lang, 'w') as file:
         for sent in df_sent:
           file.write('\t'.join(sent) + '\n')
     else:
@@ -34,9 +34,9 @@ class FileHandler():
         return df_sent
       return df_sent, tdf_sent
 
-  def extract_labels(self, language='en'):
-    df = pd.read_csv('./raw_data/dev_' + language + '.tsv', delimiter='\t')
-    tdf = pd.read_csv('./raw_data/train_' + language + '.tsv', delimiter='\t')
+  def extract_labels(self, lang='en'):
+    df = pd.read_csv('./raw_data/dev_' + lang + '.tsv', delimiter='\t')
+    tdf = pd.read_csv('./raw_data/train_' + lang + '.tsv', delimiter='\t')
     return df['HS'].values, tdf['HS'].values
 
   def write_file(self, name, content):

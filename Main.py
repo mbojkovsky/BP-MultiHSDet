@@ -50,6 +50,26 @@ def hypertuning():
 
 
 if __name__ == "__main__":
+    ft = FileHandler()
+    # ft.extract_sentences(lang='en', write=True, concat=True)
+    # ft.extract_sentences(lang='es', write=True, concat=True)
+    char_len = 0
+    word_count = 0
+    with open('text_only_es', 'r') as file:
+        for i, line in enumerate(file):
+            x = line.split('\t')
+            if len(x) > word_count:
+                word_count = len(x)
+            if len(x) == 480:
+                print(i)
+            tmp = max([len(y) for y in x])
+            if (tmp > char_len):
+                char_len = tmp
+
+    print(char_len)
+    print(word_count)
+
+    """
     w_emb = e.Embedder(1024, 'elmo_en')
     w_emb.load_embeddings()
 
@@ -89,3 +109,4 @@ if __name__ == "__main__":
         lstm_dropout=lstm_dropout)
    
     m.train(train_sent, train_labels, train_token_lengths)
+"""

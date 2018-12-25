@@ -3,6 +3,7 @@ from Model import Model
 from FileHandler import FileHandler
 import Embedder as e
 from hyperopt import fmin, tpe, hp
+import numpy as np
 
 valid_token_lengths = []
 train_token_lengths = []
@@ -50,9 +51,11 @@ def hypertuning(max_evals):
 
 
 if __name__ == "__main__":
-    # TODO zmenit model train, nech berie aj veci do test
+    print('Loading embeddings')
     w_emb = e.Embedder(dim=1024)
     w_emb.load_embeddings('dict_en', sep=' ')
+    w_emb.load_embeddings('dict_es', sep=' ')
+
     """
     print(w_emb.weights[1])
     with open('dict_en', 'w') as file:
@@ -60,15 +63,15 @@ if __name__ == "__main__":
             file.write(x)
             file.write(' '.join([str(k) for k in i]))
             file.write('\n')
-                """
-    w_emb.load_embeddings('dict_es', sep=' ')
+    """
 
     # load dataset
+    print('Loading dataset')
     ft = FileHandler()
     valid_sent, train_sent = ft.extract_multilingual_sentences()
     valid_labels, train_labels = ft.extract_multilingual_labels()
     valid_lang_labels, train_lang_labels = ft.extract_language_labels()
-    print(len(valid_labels), len(train_lang_labels), valid_sent.shape, train_sent.shape, valid_labels.shape, train_labels.shape)
+    # print(len(valid_labels), len(train_lang_labels), valid_sent.shape, train_sent.shape, valid_labels.shape, train_labels.shape)
 
     # get token lengths
     valid_token_lengths = [len(sent) for sent in valid_sent]
@@ -78,18 +81,17 @@ if __name__ == "__main__":
     # create indexed sentences
     valid_sent = w_emb.create_indexed_sentences(valid_sent, max_len)
     train_sent = w_emb.create_indexed_sentences(train_sent, max_len)
-    exit(1)
 
     # inicializacia modelu
-    batch_size = 100
-    num_epochs = 10
+    batch_size = 50
+    num_epochs = 100
     num_layers = 2
-    num_units = 256
+    num_units = 128
     learning_rate = 0.003
     word_dropout = 0.4
     lstm_dropout = 0.4
 
-
+    print('Initializing model')
     m = Model(
         w_emb,
         max_len,
@@ -100,5 +102,9 @@ if __name__ == "__main__":
         learning_rate=learning_rate,
         word_dropout=word_dropout,
         lstm_dropout=lstm_dropout)
-   
-    m.train(train_sent, train_labels, train_token_lengths)
+
+    m.train(train_sent[::16], train_labels[::16], train_token_lengths[::16], train_lang_labels[::16],
+            valid_sent[::16], valid_labels[::16], valid_token_lengths[::16], valid_lang_labels[::16])
+    # m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], train_lang_labels[:1000],
+    #         valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], valid_lang_labels[:1000])
+    print('Done!')

@@ -53,7 +53,7 @@ class Model:
     self.embedding = tf.nn.embedding_lookup(self.elmo_dic, self.x)
 
     # MULTILINGUAL FEATURE EXTRACTOR
-    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(128)
+    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(256)
     self.f_cells_fw = [self.cell() for _ in range(1)]
     self.f_cells_bw = [self.cell() for _ in range(1)]
 
@@ -118,8 +118,8 @@ class Model:
 
     self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
     self.c_train_op = self.optimizer.minimize(self.ce_loss)
-    # self.d_train_op = self.optimizer.minimize(self.disc_loss)
-    self.train_ops = tf.group(self.c_train_op)
+    self.d_train_op = self.optimizer.minimize(self.disc_loss)
+    self.train_ops = tf.group(self.c_train_op, self.d_train_op)
 
     self.pred = tf.nn.softmax(self.logits)
 

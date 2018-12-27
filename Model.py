@@ -29,7 +29,6 @@ class Model:
     self.learning_rate = learning_rate
     self.num_layers = num_layers
     self.num_units = num_units
-    # self.word_dropout = word_dropout
     self.lstm_dropout = lstm_dropout
     self.adv_lambda = adv_lambda
     self.attention_size = attention_size
@@ -37,19 +36,33 @@ class Model:
     self.embedder = embedder
 
     # INPUTS
-    self.x = tf.placeholder(tf.int32, [None, max_len])
-    self.y = tf.placeholder(tf.int64, [None])
-    self.lang_labels = tf.placeholder(tf.int64, [None])
-    self.tokens_length = tf.placeholder(tf.int32, [None])
+    self.x = tf.placeholder(tf.int32,
+                            [None, max_len],
+                            name='Sentences')
+
+    self.y = tf.placeholder(tf.int64,
+                            [None],
+                            name='HS_labels')
+
+    self.lang_labels = tf.placeholder(tf.int64,
+                                      [None],
+                                      name='Lang_labels')
+
+    self.tokens_length = tf.placeholder(tf.int32,
+                                        [None],
+                                        name='Lengths')
 
     # ELMO
     self.elmo_init = tf.constant_initializer(self.embedder.weights)
-    self.elmo_dic = tf.get_variable(
-      name='embedding_weights',
-      shape=(self.embedder.weights.shape[0], 1024),
-      initializer=self.elmo_init,
-      trainable=False)
-    self.embedding = tf.nn.embedding_lookup(self.elmo_dic, self.x)
+
+    self.elmo_dic = tf.get_variable(shape=(self.embedder.weights.shape[0], 1024),
+                                    initializer=self.elmo_init,
+                                    trainable=False,
+                                    name='Embedding_weight_dict')
+
+    self.embedding = tf.nn.embedding_lookup(self.elmo_dic,
+                                            self.x,
+                                            name='Embeddings')
 
     # MULTILINGUAL FEATURE EXTRACTOR
 
@@ -63,20 +76,29 @@ class Model:
     # LANGUAGE DISCRIMINATOR
     # dopredu mi ide 1 * self.feature_out; dozadu mi ide -adv_lambda * self.feature_out
     self.gradient_reversal = tf.stop_gradient((1 + self.adv_lambda) * self.f_outputs) - self.adv_lambda * self.f_outputs
+
     # vytvorim 1024 rozmernu reprezentaciu pre kazdy jeden tweet
-    self.d_pooled = tf.math.reduce_mean(self.gradient_reversal, axis=1)
+    self.d_pooled = tf.math.reduce_mean(self.gradient_reversal,
+                                        axis=1)
+
     # fully connected layer
-    self.language_disc_l1 = tf.contrib.layers.fully_connected(self.d_pooled,
-                                                       1024,
-                                                       weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
-                                                       weights_regularizer=tf.contrib.layers.l1_regularizer(scale=0.1))
+    self.language_disc_l1 = tf.contrib.layers.fully_connected(
+                                                self.d_pooled,
+                                                1024,
+                                                weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
+                                                weights_regularizer=tf.contrib.layers.l1_regularizer(scale=0.1))
+
     # znizim dimenzionalitu na 2 (kvoli dvom pouzitym jazykom)
-    self.language_disc_out = tf.layers.dense(self.language_disc_l1, 2)
+    self.language_disc_out = tf.layers.dense(self.language_disc_l1,
+                                             2)
+
     # loss v diskriminatore
     self.disc_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.language_disc_out,
                                                                                    labels=self.lang_labels))
+
     # CELL AND LAYER DEFINITIONS
     self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
+
     # multilayer lstm
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]
@@ -95,19 +117,32 @@ class Model:
     self.word_context = tf.get_variable(name='Att',
                                         shape=[40],
                                         dtype=tf.float32)
+
     self.att_activations = tf.contrib.layers.fully_connected(self.outputs,
                                                              40,
                                                              weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype))
-    self.word_attn_vector = tf.reduce_sum(tf.multiply(self.att_activations, self.word_context), axis=2, keepdims=True)
-    self.att_weights = tf.nn.softmax(self.word_attn_vector, axis=1)
-    self.weighted_input = tf.multiply(self.outputs, self.att_weights)
-    self.pooled = tf.reduce_sum(self.weighted_input, axis=1)
+
+    self.word_attn_vector = tf.reduce_sum(tf.multiply(self.att_activations,
+                                                      self.word_context),
+                                          axis=2,
+                                          keepdims=True)
+
+    self.att_weights = tf.nn.softmax(self.word_attn_vector,
+                                     axis=1)
+
+    self.weighted_input = tf.multiply(self.outputs,
+                                      self.att_weights)
+
+    self.pooled = tf.reduce_sum(self.weighted_input,
+                                axis=1)
 
     # TODO dava to zvlastne rozmery
     print('Toto pozri:', self.pooled.shape)
 
     # TOP-LEVEL SOFTMAX LAYER
-    self.logits = tf.layers.dense(self.pooled, units=2)
+    self.logits = tf.layers.dense(self.pooled,
+                                  units=2)
+
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
                                                                                  labels=self.y))
 

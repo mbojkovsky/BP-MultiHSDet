@@ -10,15 +10,14 @@ class Model:
   def __init__(self,
                embedder,
                max_len,
-               batch_size=100,
+               batch_size=32,
                num_epochs=10,
                num_layers=2,
                num_units=256,
                attention_size=512,
                learning_rate=0.001,
                lstm_dropout=0.4,
-               adv_lambda=0.5,
-               multi_lang=False
+               adv_lambda=0.2,
                ):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -53,27 +52,31 @@ class Model:
     self.embedding = tf.nn.embedding_lookup(self.elmo_dic, self.x)
 
     # MULTILINGUAL FEATURE EXTRACTOR
-    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(128)
 
-    # todo: sem dat CNN
+    # TODO sem dat CNN
+    self.f_outputs = tf.contrib.layers.fully_connected(self.embedding,
+                                                       1024,
+                                                       weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
+                                                       weights_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
+
 
     # LANGUAGE DISCRIMINATOR
-    # todo: nejaky rozumnejsi pooling mozno najst
     # dopredu mi ide 1 * self.feature_out; dozadu mi ide -adv_lambda * self.feature_out
-    """
     self.gradient_reversal = tf.stop_gradient((1 + self.adv_lambda) * self.f_outputs) - self.adv_lambda * self.f_outputs
     # vytvorim 1024 rozmernu reprezentaciu pre kazdy jeden tweet
     self.d_pooled = tf.math.reduce_mean(self.gradient_reversal, axis=1)
     # fully connected layer
-    self.language_disc_l1 = tf.layers.dense(self.d_pooled, 1024, activation=tf.nn.leaky_relu)
+    self.language_disc_l1 = tf.contrib.layers.fully_connected(self.d_pooled,
+                                                       1024,
+                                                       weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
+                                                       weights_regularizer=tf.contrib.layers.l1_regularizer(scale=0.1))
     # znizim dimenzionalitu na 2 (kvoli dvom pouzitym jazykom)
     self.language_disc_out = tf.layers.dense(self.language_disc_l1, 2)
     # loss v diskriminatore
     self.disc_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.language_disc_out,
                                                                                    labels=self.lang_labels))
-    """
-
     # CELL AND LAYER DEFINITIONS
+    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
     # multilayer lstm
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]
@@ -81,32 +84,38 @@ class Model:
     self.outputs, self.output_state_fw, self.output_state_bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
                                                                           self.cells_fw,
                                                                           self.cells_bw,
-                                                                          self.embedding,
+                                                                          self.f_outputs,
                                                                           dtype=tf.float32,
                                                                           sequence_length=self.tokens_length
                                                                           )
-    # TODO mozno sem dropout?
+    # TODO dropout
 
     # ATTENTION
     # implementacia podla https://www.cs.cmu.edu/~hovy/papers/16HLT-hierarchical-attention-networks.pdf
-    self.word_context = tf.get_variable(name='Att', shape=[self.attention_size], dtype=tf.float32)
-    self.att_activations = tf.layers.dense(self.outputs, self.attention_size, activation=tf.nn.tanh)
+    self.word_context = tf.get_variable(name='Att',
+                                        shape=[40],
+                                        dtype=tf.float32)
+    self.att_activations = tf.contrib.layers.fully_connected(self.outputs,
+                                                             40,
+                                                             weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype))
     self.word_attn_vector = tf.reduce_sum(tf.multiply(self.att_activations, self.word_context), axis=2, keepdims=True)
     self.att_weights = tf.nn.softmax(self.word_attn_vector, axis=1)
     self.weighted_input = tf.multiply(self.outputs, self.att_weights)
     self.pooled = tf.reduce_sum(self.weighted_input, axis=1)
 
-    self.pooled = tf.reduce_mean(self.outputs, axis=1)
+    # TODO dava to zvlastne rozmery
+    print('Toto pozri:', self.pooled.shape)
 
     # TOP-LEVEL SOFTMAX LAYER
     self.logits = tf.layers.dense(self.pooled, units=2)
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
                                                                                  labels=self.y))
 
-    self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-    self.c_train_op = self.optimizer.minimize(self.ce_loss)
-    if multi_lang:
-      self.d_train_op = self.optimizer.minimize(self.disc_loss)
+    self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+    self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
+
+    self.d_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+    self.d_train_op = self.d_optimizer.minimize(self.disc_loss)
 
     self.pred = tf.nn.softmax(self.logits)
 
@@ -137,10 +146,14 @@ class Model:
           start = iteration * self.batch_size
           end = min(start + self.batch_size, sentences.shape[0])
 
-          c_l, d_l, _ = sess.run([self.ce_loss, self.ce_loss, self.c_train_op], feed_dict={self.x: sen[start:end],
-                                                                                            self.y: lab[start:end],
-                                                                                            self.tokens_length: t_lens[start:end],
-                                                                                            self.lang_labels: l_lab[start:end]})
+          c_l, _ = sess.run([self.ce_loss, self.c_train_op], feed_dict={self.x: sen[start:end],
+                                                                        self.y: lab[start:end],
+                                                                        self.tokens_length: t_lens[start:end]})
+
+          d_l, _ = sess.run([self.disc_loss, self.d_train_op], feed_dict={self.x: sen[start:end],
+                                                                          self.lang_labels: l_lab[start:end],
+                                                                          self.tokens_length: t_lens[start:end]})
+
           c_loss += c_l
           d_loss += d_l
 

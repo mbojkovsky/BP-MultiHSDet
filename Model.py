@@ -3,8 +3,8 @@ import numpy as np
 from math import ceil
 import os
 
-def gs(a):
-  print(a.shape)
+def identity_init(shape, dtype, partition_info=None):
+    return tf.eye(shape[0], shape[1], dtype=dtype)
 
 class Model:
   def __init__(self,
@@ -18,6 +18,8 @@ class Model:
                learning_rate=0.001,
                lstm_dropout=0.4,
                adv_lambda=0.2,
+               disc_units=1024,
+               training=True
                ):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -32,6 +34,7 @@ class Model:
     self.lstm_dropout = lstm_dropout
     self.adv_lambda = adv_lambda
     self.attention_size = attention_size
+    self.training = training
 
     self.embedder = embedder
 
@@ -69,7 +72,7 @@ class Model:
     # TODO sem dat CNN
     self.f_outputs = tf.contrib.layers.fully_connected(self.embedding,
                                                        1024,
-                                                       weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
+                                                       weights_initializer=identity_init,
                                                        weights_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
 
 
@@ -84,8 +87,8 @@ class Model:
     # fully connected layer
     self.language_disc_l1 = tf.contrib.layers.fully_connected(
                                                 self.d_pooled,
-                                                1024,
-                                                weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype),
+                                                disc_units,
+                                                weights_initializer=identity_init,
                                                 weights_regularizer=tf.contrib.layers.l1_regularizer(scale=0.1))
 
     # znizim dimenzionalitu na 2 (kvoli dvom pouzitym jazykom)
@@ -120,7 +123,7 @@ class Model:
 
     self.att_activations = tf.contrib.layers.fully_connected(self.outputs,
                                                              40,
-                                                             weights_initializer=lambda shape, dtype, partition_info=None: tf.eye(shape[0], shape[1], dtype=dtype))
+                                                             weights_initializer=identity_init)
 
     self.word_attn_vector = tf.reduce_sum(tf.multiply(self.att_activations,
                                                       self.word_context),
@@ -135,9 +138,6 @@ class Model:
 
     self.pooled = tf.reduce_sum(self.weighted_input,
                                 axis=1)
-
-    # TODO dava to zvlastne rozmery
-    print('Toto pozri:', self.pooled.shape)
 
     # TOP-LEVEL SOFTMAX LAYER
     self.logits = tf.layers.dense(self.pooled,
@@ -170,6 +170,7 @@ class Model:
     with tf.Session() as sess:
       sess.run(self.init)
       for epoch in self.epochs:
+        self.training = True
         # shuffle inputs
         sen, lab, t_lens, l_lab = self.shuffle(sentences, labels, sentence_lengths, lang_labels)
 
@@ -196,11 +197,12 @@ class Model:
         self.saver.save(sess, './chk/model_' + language)
         print('Epoch:', epoch, 'Classifier loss:', c_loss, 'Discriminator loss:', d_loss)
         print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, lang_labels))
-        # print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
+        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
 
 
   def test(self, t_sentences, t_labels, t_sentence_lengths, t_lang_labels, language='en'):
     iterations = np.arange(ceil(t_sentences.shape[0] / self.batch_size))
+    self.training = False
 
     with tf.Session() as sess:
       self.saver.restore(sess, './chk/model_' + language)

@@ -56,6 +56,7 @@ if __name__ == "__main__":
     w_emb.load_embeddings('muse_en', sep=' ')
     w_emb.load_embeddings('muse_es', sep=' ')
 
+
     # with open('muse_dict_es', 'w') as file:
     #     for i, x in zip(w_emb.weights[1:], w_emb.word2idx):
     #         file.write(x)
@@ -99,10 +100,9 @@ if __name__ == "__main__":
         learning_rate=learning_rate,
         lstm_dropout=lstm_dropout)
 
-    exit(0)
 
-    # m.train(train_sent[::16], train_labels[::16], train_token_lengths[::16], train_lang_labels[::16],
-    #         valid_sent[::16], valid_labels[::16], valid_token_lengths[::16], valid_lang_labels[::16])
-    m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], None,
-            valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], None)
+    m.train(train_sent[::100], train_labels[::100], train_token_lengths[::100], None,
+            valid_sent[::100], valid_labels[::100], valid_token_lengths[::100], None)
+    # m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], None,
+    #         valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], None)
     print('Done!')

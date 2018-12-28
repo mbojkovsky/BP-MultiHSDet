@@ -137,10 +137,9 @@ class Model:
       for epoch in self.epochs:
         self.training = True
         # shuffle inputs
-        sen, lab, t_lens, l_lab = self.shuffle(sentences, labels, sentence_lengths, lang_labels)
+        sen, lab, t_lens = self.shuffle(sentences, labels, sentence_lengths)
 
         # for loss printing (discriminator and classificator)
-        d_loss = 0
         c_loss = 0
 
         for iteration in iterations:
@@ -155,9 +154,9 @@ class Model:
 
         # validation between epochs
         self.saver.save(sess, './chk/model_' + language)
-        print('Epoch:', epoch, 'Classifier loss:', c_loss, 'Discriminator loss:', d_loss)
+        print('Epoch:', epoch, 'Classifier loss:', c_loss)
         print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, lang_labels))
-        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
+        # print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
 
 
   def test(self, t_sentences, t_labels, t_sentence_lengths, t_lang_labels, language='en'):
@@ -177,18 +176,16 @@ class Model:
         correct += corr_pred[0].sum()
     return correct / len(t_sentences)
  
-  def shuffle(self, sentences, labels, lengths, langs):
+  def shuffle(self, sentences, labels, lengths):
     indexes = np.arange(len(labels))
     np.random.shuffle(indexes)
     shuffled_sentences = []
     shuffled_labels = []
     shuffled_lengths = []
-    shuffled_langs = []
-  
+
     for i in indexes:
       shuffled_sentences.append(sentences[i])
       shuffled_labels.append(labels[i])
       shuffled_lengths.append(lengths[i])
-      shuffled_langs.append(langs[i])
-    
-    return shuffled_sentences, shuffled_labels, shuffled_lengths, shuffled_langs
+
+    return shuffled_sentences, shuffled_labels, shuffled_lengths

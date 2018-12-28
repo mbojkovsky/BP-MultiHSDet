@@ -18,7 +18,10 @@ class Embedder:
                     weights.append(np.array(values[1:], dtype=np.float32))
                     self.index += 1
 
-        self.weights = np.array(weights)
+        if self.weights is None:
+            self.weights = np.array(weights)
+        else:
+            self.weights = np.append(self.weights, weights, axis=0)
 
     def create_indexed_sentences(self, sentences, pad_size=70):
         indexed = list(map(lambda sent: [self.word2idx.get(word, 0) for word in sent], sentences))

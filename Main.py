@@ -52,25 +52,22 @@ def hypertuning(max_evals):
 
 if __name__ == "__main__":
     print('Loading embeddings')
-    w_emb = e.Embedder(dim=1024)
-    w_emb.load_embeddings('dict_en', sep=' ')
-    w_emb.load_embeddings('dict_es', sep=' ')
+    w_emb = e.Embedder(dim=300)
+    w_emb.load_embeddings('muse_en', sep=' ')
+    w_emb.load_embeddings('muse_es', sep=' ')
 
-    """
-    print(w_emb.weights[1])
-    with open('dict_en', 'w') as file:
-        for i, x in zip(w_emb.weights[1:], w_emb.word2idx):
-            file.write(x)
-            file.write(' '.join([str(k) for k in i]))
-            file.write('\n')
-    """
+    # with open('muse_dict_es', 'w') as file:
+    #     for i, x in zip(w_emb.weights[1:], w_emb.word2idx):
+    #         file.write(x)
+    #         file.write(' '.join([str(k) for k in i]))
+    #         file.write('\n')
 
+    print(w_emb.weights.shape)
     # load dataset
     print('Loading dataset')
     ft = FileHandler()
     valid_sent, train_sent = ft.extract_multilingual_sentences()
     valid_labels, train_labels = ft.extract_multilingual_labels()
-    valid_lang_labels, train_lang_labels = ft.extract_language_labels()
     # print(len(valid_labels), len(train_lang_labels), valid_sent.shape, train_sent.shape, valid_labels.shape, train_labels.shape)
     #
     # get token lengths
@@ -102,8 +99,10 @@ if __name__ == "__main__":
         learning_rate=learning_rate,
         lstm_dropout=lstm_dropout)
 
+    exit(0)
+
     # m.train(train_sent[::16], train_labels[::16], train_token_lengths[::16], train_lang_labels[::16],
     #         valid_sent[::16], valid_labels[::16], valid_token_lengths[::16], valid_lang_labels[::16])
-    m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], train_lang_labels[:1000],
-            valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], valid_lang_labels[:1000])
+    m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], None,
+            valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], None)
     print('Done!')

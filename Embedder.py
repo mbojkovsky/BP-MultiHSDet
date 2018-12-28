@@ -9,7 +9,7 @@ class Embedder:
 
     def load_embeddings(self, file_name, sep=' '):
         weights = []
-        weights.append(np.zeros(1024))
+        weights.append(np.zeros(self.dim))
         with open('./data/' + file_name, 'r') as file:
             for line in file:
                 values = line.split(sep)
@@ -21,7 +21,7 @@ class Embedder:
         self.weights = np.array(weights)
 
     def create_indexed_sentences(self, sentences, pad_size=70):
-        indexed = list(map(lambda sent: [self.word2idx[word] for word in sent], sentences))
+        indexed = list(map(lambda sent: [self.word2idx.get(word, 0) for word in sent], sentences))
         indexed = [i + [0] * (pad_size - len(i)) for i in indexed]
         return np.array(indexed)
 

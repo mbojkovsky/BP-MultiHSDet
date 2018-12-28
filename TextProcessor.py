@@ -26,6 +26,9 @@ class TextProcessor:
         # remove email, @name
         tweet = re.sub(r"[^ ]*@[^ ]*", '', tweet)
 
+        # remove hashtags
+        tweet = re.sub(r" #[^ ]", '', tweet)
+
         basic_t = []
         if lang == 'en':
             basic_t = word_tokenize(tweet)

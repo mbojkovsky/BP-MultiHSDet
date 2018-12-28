@@ -67,38 +67,6 @@ class Model:
                                             self.x,
                                             name='Embeddings')
 
-    # MULTILINGUAL FEATURE EXTRACTOR
-
-    # TODO sem dat CNN
-    self.f_outputs = tf.contrib.layers.fully_connected(self.embedding,
-                                                       1024,
-                                                       weights_initializer=identity_init,
-                                                       weights_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
-
-
-    # LANGUAGE DISCRIMINATOR
-    # dopredu mi ide 1 * self.feature_out; dozadu mi ide -adv_lambda * self.feature_out
-    self.gradient_reversal = tf.stop_gradient((1 + self.adv_lambda) * self.f_outputs) - self.adv_lambda * self.f_outputs
-
-    # vytvorim 1024 rozmernu reprezentaciu pre kazdy jeden tweet
-    self.d_pooled = tf.math.reduce_mean(self.gradient_reversal,
-                                        axis=1)
-
-    # fully connected layer
-    self.language_disc_l1 = tf.contrib.layers.fully_connected(
-                                                self.d_pooled,
-                                                disc_units,
-                                                weights_initializer=identity_init,
-                                                weights_regularizer=tf.contrib.layers.l1_regularizer(scale=0.1))
-
-    # znizim dimenzionalitu na 2 (kvoli dvom pouzitym jazykom)
-    self.language_disc_out = tf.layers.dense(self.language_disc_l1,
-                                             2)
-
-    # loss v diskriminatore
-    self.disc_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.language_disc_out,
-                                                                                   labels=self.lang_labels))
-
     # CELL AND LAYER DEFINITIONS
     self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
 
@@ -109,7 +77,7 @@ class Model:
     self.outputs, self.output_state_fw, self.output_state_bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
                                                                           self.cells_fw,
                                                                           self.cells_bw,
-                                                                          self.f_outputs,
+                                                                          self.embedding,
                                                                           dtype=tf.float32,
                                                                           sequence_length=self.tokens_length
                                                                           )
@@ -149,9 +117,6 @@ class Model:
     self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
     self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
 
-    self.d_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-    self.d_train_op = self.d_optimizer.minimize(self.disc_loss)
-
     self.pred = tf.nn.softmax(self.logits)
 
     self.correct_prediction = tf.equal(tf.argmax(self.pred, 1), self.y)
@@ -186,12 +151,7 @@ class Model:
                                                                         self.y: lab[start:end],
                                                                         self.tokens_length: t_lens[start:end]})
 
-          d_l, _ = sess.run([self.disc_loss, self.d_train_op], feed_dict={self.x: sen[start:end],
-                                                                          self.lang_labels: l_lab[start:end],
-                                                                          self.tokens_length: t_lens[start:end]})
-
           c_loss += c_l
-          d_loss += d_l
 
         # validation between epochs
         self.saver.save(sess, './chk/model_' + language)
@@ -213,8 +173,7 @@ class Model:
         end = min(start + self.batch_size, t_sentences.shape[0])
         corr_pred = sess.run([self.correct_prediction], feed_dict={self.x: t_sentences[start:end],
                                                                    self.tokens_length: t_sentence_lengths[start:end],
-                                                                   self.y: t_labels[start:end],
-                                                                   self.lang_labels: t_lang_labels[start:end]})
+                                                                   self.y: t_labels[start:end]})
         correct += corr_pred[0].sum()
     return correct / len(t_sentences)
  

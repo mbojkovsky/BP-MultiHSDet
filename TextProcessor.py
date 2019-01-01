@@ -28,7 +28,7 @@ class TextProcessor:
 
         basic_t = []
         if lang == 'en':
-            basic_t = word_tokenize(tweet)
+            basic_t = [str(token) for token in self.nlp_en(tweet) if not token.is_stop]
         else:
             basic_t = [str(token) for token in self.nlp_es(tweet) if not token.is_stop]
 

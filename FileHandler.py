@@ -6,9 +6,9 @@ class FileHandler():
   def __init__(self):
     self.tp = TextProcessor()
 
-  def extract_multilingual_sentences(self):
-    valid_sent_en, train_sent_en = self.extract_sentences('en', write=False, concat=False)
-    valid_sent_es, train_sent_es = self.extract_sentences('es', write=False, concat=False)
+  def extract_multilingual_sentences(self, word_level_processing=True):
+    valid_sent_en, train_sent_en = self.extract_sentences('en', write=False, concat=False, word_level=word_level_processing)
+    valid_sent_es, train_sent_es = self.extract_sentences('es', write=False, concat=False, word_level=word_level_processing)
 
     valid_sents = np.append(valid_sent_en, valid_sent_es)
     train_sents = np.append(train_sent_en, train_sent_es)
@@ -29,7 +29,7 @@ class FileHandler():
     return [0] * len(valid_labels_en) + [1] * len(valid_labels_es), \
            [0] * len(train_labels_en) + [1] * len(train_labels_es)
 
-  def extract_sentences(self, lang='en', write=False, concat=True):
+  def extract_sentences(self, lang='en', write=False, concat=False, word_level=True):
     df = pd.read_csv('./raw_data/dev_' + lang + '.tsv', delimiter='\t')
     tdf = pd.read_csv('./raw_data/train_' + lang + '.tsv', delimiter='\t')
 
@@ -42,11 +42,11 @@ class FileHandler():
     if concat:
       df = df.append(tdf, ignore_index=False)
       df = df.reset_index(drop=True)
-      df_sent = self.tp.prepare_sentences(df.text, lang)
+      df_sent = self.tp.prepare_sentences(df.text, lang, word_level=word_level)
 
     else:
-      df_sent = self.tp.prepare_sentences(df.text, lang)
-      tdf_sent = self.tp.prepare_sentences(tdf.text, lang)
+      df_sent = self.tp.prepare_sentences(df.text, lang, word_level=word_level)
+      tdf_sent = self.tp.prepare_sentences(tdf.text, lang, word_level=word_level)
 
     if write and concat:
       with open('text_only_' + lang, 'w') as file:

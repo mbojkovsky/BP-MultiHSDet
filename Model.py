@@ -8,7 +8,7 @@ def identity_init(shape, dtype, partition_info=None):
 
 class Model:
   def __init__(self,
-               embedder,
+               word_embedder,
                max_len,
                batch_size=32,
                num_epochs=10,
@@ -18,7 +18,6 @@ class Model:
                learning_rate=0.001,
                lstm_dropout=0.4,
                adv_lambda=0.2,
-               disc_units=1024,
                training=True
                ):
 
@@ -36,7 +35,7 @@ class Model:
     self.attention_size = attention_size
     self.training = training
 
-    self.embedder = embedder
+    self.word_embedder = word_embedder
 
     # INPUTS
     self.x = tf.placeholder(tf.int32,
@@ -47,27 +46,32 @@ class Model:
                             [None],
                             name='HS_labels')
 
-    self.lang_labels = tf.placeholder(tf.int64,
-                                      [None],
-                                      name='Lang_labels')
-
     self.tokens_length = tf.placeholder(tf.int32,
                                         [None],
                                         name='Lengths')
 
-    # ELMO
-    self.elmo_init = tf.constant_initializer(self.embedder.weights)
+    # WORD EMBEDDINGS
+    self.dic_init = tf.constant_initializer(self.word_embedder.weights)
 
-    self.elmo_dic = tf.get_variable(shape=(self.embedder.weights.shape[0], 1024),
-                                    initializer=self.elmo_init,
+    self.word_dic = tf.get_variable(shape=(self.word_embedder.weights.shape[0], self.word_embedder.weights.shape[1]),
+                                    initializer=self.dic_init,
                                     trainable=False,
                                     name='Embedding_weight_dict')
 
-    self.embedding = tf.nn.embedding_lookup(self.elmo_dic,
+    self.embedding = tf.nn.embedding_lookup(self.word_dic,
                                             self.x,
                                             name='Embeddings')
 
+    # CHAR EMBEDDINGS
+
     # CELL AND LAYER DEFINITIONS
+
+    # CHAR LAYER
+    # musim si spravit dasl embedding lookup, nahodne inicializovany
+    # prejdem teda cez pismenka v slove
+    # nieco mi to vypluje, asi to max poolnem a concatnem vyssie
+
+    # WORD LAYER
     self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
 
     # multilayer lstm
@@ -86,11 +90,11 @@ class Model:
     # ATTENTION
     # implementacia podla https://www.cs.cmu.edu/~hovy/papers/16HLT-hierarchical-attention-networks.pdf
     self.word_context = tf.get_variable(name='Att',
-                                        shape=[40],
+                                        shape=[20],
                                         dtype=tf.float32)
 
     self.att_activations = tf.contrib.layers.fully_connected(self.outputs,
-                                                             40,
+                                                             20,
                                                              weights_initializer=identity_init)
 
     self.word_attn_vector = tf.reduce_sum(tf.multiply(self.att_activations,
@@ -133,6 +137,7 @@ class Model:
     iterations = np.arange(ceil(sentences.shape[0] / self.batch_size))
 
     with tf.Session() as sess:
+      # self.saver.restore(sess, './chk/model_' + language)
       sess.run(self.init)
       for epoch in self.epochs:
         self.training = True
@@ -156,7 +161,7 @@ class Model:
         self.saver.save(sess, './chk/model_' + language)
         print('Epoch:', epoch, 'Classifier loss:', c_loss)
         print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, lang_labels))
-        # print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
+        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
 
 
   def test(self, t_sentences, t_labels, t_sentence_lengths, t_lang_labels, language='en'):

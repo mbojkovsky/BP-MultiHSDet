@@ -9,7 +9,9 @@ def identity_init(shape, dtype, partition_info=None):
 class Model:
   def __init__(self,
                word_embedder,
-               max_len,
+               w_max_len,
+               char_embedder,
+               c_max_len,
                batch_size=32,
                num_epochs=10,
                num_layers=2,
@@ -36,56 +38,83 @@ class Model:
     self.training = training
 
     self.word_embedder = word_embedder
+    self.char_embedder = char_embedder
 
     # INPUTS
-    self.x = tf.placeholder(tf.int32,
-                            [None, max_len],
+    # Sentence level
+    self.sentences = tf.placeholder(tf.int32,
+                            [None, w_max_len],
                             name='Sentences')
 
-    self.y = tf.placeholder(tf.int64,
-                            [None],
-                            name='HS_labels')
 
-    self.tokens_length = tf.placeholder(tf.int32,
+
+    self.w_tokens_length = tf.placeholder(tf.int32,
                                         [None],
-                                        name='Lengths')
+                                        name='Sentence_lengths')
 
+    # Word level
+    self.words = tf.placeholder(tf.int32,
+                            [None, w_max_len, c_max_len],
+                            name='Words')
+
+    self.labels = tf.placeholder(tf.int64,
+                                 [None],
+                                 name='HS_labels')
     # WORD EMBEDDINGS
-    self.dic_init = tf.constant_initializer(self.word_embedder.weights)
+    self.w_dic_init = tf.constant_initializer(self.word_embedder.weights)
 
-    self.word_dic = tf.get_variable(shape=(self.word_embedder.weights.shape[0], self.word_embedder.weights.shape[1]),
-                                    initializer=self.dic_init,
+    self.word_dic = tf.get_variable(shape=self.word_embedder.weights.shape,
+                                    initializer=self.w_dic_init,
                                     trainable=False,
                                     name='Embedding_weight_dict')
 
-    self.embedding = tf.nn.embedding_lookup(self.word_dic,
-                                            self.x,
+    self.w_embedding = tf.nn.embedding_lookup(self.word_dic,
+                                            self.sentences,
                                             name='Embeddings')
 
     # CHAR EMBEDDINGS
+    self.c_dic_init = tf.constant_initializer(self.char_embedder.weights)
+
+    self.char_dic = tf.get_variable(shape=self.char_embedder.weights.shape,
+                                    initializer=self.c_dic_init,
+                                    trainable=True,
+                                    name='Character_weight_dict')
+
+    self.c_embedding = tf.nn.embedding_lookup(self.char_dic,
+                                              self.words,
+                                              name='Char_embeddings')
 
     # CELL AND LAYER DEFINITIONS
-
     # CHAR LAYER
-    # musim si spravit dasl embedding lookup, nahodne inicializovany
-    # prejdem teda cez pismenka v slove
-    # nieco mi to vypluje, asi to max poolnem a concatnem vyssie
+    self.c_cell = lambda: tf.contrib.rnn.LSTMBlockCell(32)
+    self.c_cells_fw = [self.c_cell() for _ in range(1)]
+    self.c_cells_bw = [self.c_cell() for _ in range(1)]
+
+    self.c_flat = tf.reshape(self.c_embedding, shape=[-1, w_max_len, c_max_len * self.char_embedder.weights.shape[1]])
+
+    self.c_outputs, _ , _ = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
+        self.c_cells_fw,
+        self.c_cells_bw,
+        self.c_flat,
+        dtype=tf.float32,
+        sequence_length=self.w_tokens_length,
+        scope='char_level_lstm')
+
+    # concat char level features with extracted features from char level lstm
+    self.embedding = tf.concat([self.w_embedding, self.c_outputs], -1)
 
     # WORD LAYER
-    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
-
-    # multilayer lstm
+    self.cell = lambda: tf.contrib.rnn.LSTMBlockCell(num_units)
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]
 
-    self.outputs, self.output_state_fw, self.output_state_bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-                                                                          self.cells_fw,
-                                                                          self.cells_bw,
-                                                                          self.embedding,
-                                                                          dtype=tf.float32,
-                                                                          sequence_length=self.tokens_length
-                                                                          )
-    # TODO dropout
+    self.outputs, _, _ = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(self.cells_fw,
+                                                                        self.cells_bw,
+                                                                        self.embedding,
+                                                                        dtype=tf.float32,
+                                                                        sequence_length=self.w_tokens_length,
+                                                                        scope='word_level_lstm'
+                                                                        )
 
     # ATTENTION
     # implementacia podla https://www.cs.cmu.edu/~hovy/papers/16HLT-hierarchical-attention-networks.pdf
@@ -116,21 +145,21 @@ class Model:
                                   units=2)
 
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
-                                                                                 labels=self.y))
+                                                                                 labels=self.labels))
 
     self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
     self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
 
     self.pred = tf.nn.softmax(self.logits)
 
-    self.correct_prediction = tf.equal(tf.argmax(self.pred, 1), self.y)
+    self.correct_prediction = tf.equal(tf.argmax(self.pred, 1), self.labels)
 
     # MISC
     self.saver = tf.train.Saver()
     self.init = tf.global_variables_initializer()
 
-  def train(self, sentences, labels, sentence_lengths, lang_labels,
-            v_sentences, v_labels, v_sentence_lengths, v_lang_labels,
+  def train(self, sentences, labels, sentence_lengths, words,
+            v_sentences, v_labels, v_sentence_lengths, v_words,
             language='en'):
     print('Started training!')
 
@@ -142,7 +171,7 @@ class Model:
       for epoch in self.epochs:
         self.training = True
         # shuffle inputs
-        sen, lab, t_lens = self.shuffle(sentences, labels, sentence_lengths)
+        sen, lab, t_lens, char = self.shuffle(sentences, labels, sentence_lengths, words)
 
         # for loss printing (discriminator and classificator)
         c_loss = 0
@@ -151,20 +180,20 @@ class Model:
           start = iteration * self.batch_size
           end = min(start + self.batch_size, sentences.shape[0])
 
-          c_l, _ = sess.run([self.ce_loss, self.c_train_op], feed_dict={self.x: sen[start:end],
-                                                                        self.y: lab[start:end],
-                                                                        self.tokens_length: t_lens[start:end]})
+          c_l, _ = sess.run([self.ce_loss, self.c_train_op], feed_dict={self.sentences: sen[start:end],
+                                                                        self.labels: lab[start:end],
+                                                                        self.words: char[start:end],
+                                                                        self.w_tokens_length: t_lens[start:end]})
 
           c_loss += c_l
 
         # validation between epochs
         self.saver.save(sess, './chk/model_' + language)
         print('Epoch:', epoch, 'Classifier loss:', c_loss)
-        print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, lang_labels))
-        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_lang_labels), '\n')
+        print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, words))
+        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, v_words), '\n')
 
-
-  def test(self, t_sentences, t_labels, t_sentence_lengths, t_lang_labels, language='en'):
+  def test(self, t_sentences, t_labels, t_sentence_lengths, t_words, language='en'):
     iterations = np.arange(ceil(t_sentences.shape[0] / self.batch_size))
     self.training = False
 
@@ -175,22 +204,25 @@ class Model:
       for iteration in iterations:
         start = iteration * self.batch_size
         end = min(start + self.batch_size, t_sentences.shape[0])
-        corr_pred = sess.run([self.correct_prediction], feed_dict={self.x: t_sentences[start:end],
-                                                                   self.tokens_length: t_sentence_lengths[start:end],
-                                                                   self.y: t_labels[start:end]})
+        corr_pred = sess.run([self.correct_prediction], feed_dict={self.sentences: t_sentences[start:end],
+                                                                   self.w_tokens_length: t_sentence_lengths[start:end],
+                                                                   self.words: t_words[start:end],
+                                                                   self.labels: t_labels[start:end]})
         correct += corr_pred[0].sum()
     return correct / len(t_sentences)
  
-  def shuffle(self, sentences, labels, lengths):
+  def shuffle(self, sentences, labels, lengths, words):
     indexes = np.arange(len(labels))
     np.random.shuffle(indexes)
     shuffled_sentences = []
     shuffled_labels = []
     shuffled_lengths = []
+    shuffled_words = []
 
     for i in indexes:
       shuffled_sentences.append(sentences[i])
       shuffled_labels.append(labels[i])
       shuffled_lengths.append(lengths[i])
+      shuffled_words.append(words[i])
 
-    return shuffled_sentences, shuffled_labels, shuffled_lengths
+    return shuffled_sentences, shuffled_labels, shuffled_lengths, shuffled_words

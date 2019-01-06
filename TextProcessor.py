@@ -13,6 +13,7 @@ class TextProcessor:
         self.nlp_en = English()
         self.nlp_es = Spanish()
         self.characters = ''.join(set(string.printable.lower())) + 'áéíóú¿¡üñçå¿¡€¢£¥°âãäåïðñöü‡œ‰”„'
+        self.count = []
 
     def get_char_list(self):
         return self.characters
@@ -27,11 +28,24 @@ class TextProcessor:
         return max_len
   
     def process_line(self, line, word_processing, lang='en'):
-        # remove url
-        tweet = re.sub(r"\b[^ ]*https?://[^ ]*", '', line)
+        tweet = re.sub(r"\b[^ ]*https?://[^ ]*", '', line.lower())
 
         # remove email, @name
         tweet = re.sub(r"[^ ]*@[^ ]*", '', tweet)
+
+        # fix malformed hashtags
+        tweet = re.sub('#', ' ', tweet)
+        tweet = re.sub(r' {2}', ' ', tweet)
+
+        # fix html characters
+        tweet = re.sub(r'&gt;', '>', tweet)
+        tweet = re.sub(r'&lt;', '<', tweet)
+        tweet = re.sub(r'&le;', '<=', tweet)
+        tweet = re.sub(r'&ge;', '>=', tweet)
+
+        # change emoji to word representations
+        tweet = emoji.demojize(tweet, delimiters=('', ''))
+        tweet = re.sub(r'_', ' ', tweet)
 
         # tokenization
         basic_t = []
@@ -47,15 +61,19 @@ class TextProcessor:
             tweet = ''.join(list(filter(lambda x: x in self.characters, tweet)))
             basic_t = [str(token) for token in self.nlp_es(tweet) if not token.is_stop]
 
-        # change emoji to word representations
+        # max 48 chars per word
+        basic_t = [w[:48] for w in basic_t]
 
         # vymazem vsetky samostatne symboly
-        filtered_lowercased = [w.lower() for w in basic_t if re.match(r'[a-zA-Z0-9]+', w)]
+        filtered_lowercased = [w for w in basic_t if re.match(r'[a-zA-Z0-9]+', w)]
 
         # replace numbers with <number>
         finished = list(map(lambda x: re.sub(r"^[.]?([0-9]+[.,]?)+\b", '<number>', x), filtered_lowercased))
-        return finished
 
+        self.count.append(len(finished))
+
+        # max 50 slov
+        return finished[:50]
 
     # prechod datami a aplikacia process_line
     def prepare_sentences(self, data, lang='en', word_level=True):

@@ -8,8 +8,8 @@ class Embedder:
         self.index = 1
 
     def create_embeddings(self, list):
-        self.weights = np.random.normal(loc=0, scale=0.3, size=(len(list), self.dim))
-        self.word2idx = dict(zip(list, range(0, len(list))))
+        self.weights = np.random.normal(loc=0, scale=0.3, size=(len(list) + 1, self.dim))
+        self.word2idx = dict(zip(list, range(1, len(list))))
 
     def load_embeddings(self, file_name, sep=' '):
         weights = []

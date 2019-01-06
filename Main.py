@@ -27,7 +27,6 @@ def hypertuning_cycle(params):
         num_layers=params['num_layers'],
         num_units=params['num_units'],
         learning_rate=params['learning_rate'],
-        word_dropout=params['word_dropout'],
         lstm_dropout=params['lstm_dropout'],
     )
 
@@ -50,6 +49,58 @@ def hypertuning(max_evals):
     best = fmin(hypertuning_cycle, space, algo=tpe.suggest, max_evals=max_evals)
     print(best)
 
+# TODO niekde robim chybu v odstranovani pismen pri char level zalezitostiach; zatial to netreba riesit
+def get_sentences(ft, emb, word_level_processing):
+    valid_sent, train_sent = ft.extract_multilingual_sentences()
+    valid_labels, train_labels = ft.extract_multilingual_labels()
+
+    if word_level_processing:
+        # get token lengths
+        valid_token_lengths = [len(sent) for sent in valid_sent]
+        train_token_lengths = [len(sent) for sent in train_sent]
+
+        # create indexed sentences
+        max_len = max(valid_token_lengths + train_token_lengths)
+        valid_sent = emb.create_indexed_sentences(valid_sent, max_len)
+        train_sent = emb.create_indexed_sentences(train_sent, max_len)
+    else:
+        valid_token_lengths = [[len(word) for word in sent] for sent in valid_sent]
+        train_token_lengths = [[len(word) for word in sent] for sent in train_sent]
+
+        max_len = 64
+
+        valid_sent = np.array([emb.create_indexed_sentences(sent, max_len) for sent in valid_sent])
+        train_sent = np.array([emb.create_indexed_sentences(sent, max_len) for sent in train_sent])
+
+        valid_sent = np.array([x if x.shape != (0, ) else np.array([[0] * max_len]) for x in valid_sent])
+        train_sent = np.array([x if x.shape != (0, ) else np.array([[0] * max_len]) for x in train_sent])
+
+        # padding
+        pad_len = max([len(x) for x in np.append(valid_sent, train_sent)])
+        template = np.zeros(shape=(pad_len, max_len))
+
+        ret = []
+
+        for x in valid_sent:
+            tmp = template
+            tmp[:x.shape[0], :x.shape[1]] = x
+            ret.append(tmp)
+
+        valid_sent = np.array(ret)
+
+        ret = []
+
+        for i, x in enumerate(train_sent):
+            tmp = template
+            # print(i, x.shape)
+            tmp[:x.shape[0], :x.shape[1]] = x
+            ret.append(tmp)
+
+        train_sent = np.array(ret)
+
+
+    return valid_sent, valid_labels, valid_token_lengths, \
+           train_sent, train_labels, train_token_lengths
 
 if __name__ == "__main__":
 
@@ -61,7 +112,7 @@ if __name__ == "__main__":
     c_emb.create_embeddings(tp.characters)
 
     w_emb = e.Embedder(dim=300)
-    w_emb.load_embeddings('muse_dict_en', sep=' ')
+    # w_emb.load_embeddings('muse_dict_en', sep=' ')
     w_emb.load_embeddings('muse_dict_es', sep=' ')
 
 
@@ -89,35 +140,27 @@ if __name__ == "__main__":
     #         file.write(' '.join([str(k) for k in emb]))
     #         file.write('\n')
 
-    # load dataset
     print('Loading dataset')
-    valid_sent, train_sent = ft.extract_multilingual_sentences()
-    valid_labels, train_labels = ft.extract_multilingual_labels()
-    # print(len(valid_labels), len(train_lang_labels), valid_sent.shape, train_sent.shape, valid_labels.shape, train_labels.shape)
 
-    # get token lengths
-    valid_token_lengths = [len(sent) for sent in valid_sent]
-    train_token_lengths = [len(sent) for sent in train_sent]
-    max_len = max(valid_token_lengths + train_token_lengths)
+    wv_sent, wv_labs, wv_sent_len, wt_sent, wt_labs, wt_sent_len = get_sentences(ft, w_emb, True)
 
-    # create indexed sentences
-    valid_sent = w_emb.create_indexed_sentences(valid_sent, max_len)
-    train_sent = w_emb.create_indexed_sentences(train_sent, max_len)
+    # TODO funkciu treba podla mna prekopat
+    cv_sent, _, _, ct_sent, _, _ = get_sentences(ft, c_emb, False)
 
-    print(train_sent[0])
-    # inicializacia modelu
+    print('Initializing model')
     batch_size = 64
-    num_epochs = 100
+    num_epochs = 300
     num_layers = 2
     num_units = 256
     learning_rate = 0.003
     word_dropout = 0.4
     lstm_dropout = 0.4
 
-    print('Initializing model')
     m = Model(
         w_emb,
-        max_len,
+        wv_sent.shape[1],
+        c_emb,
+        cv_sent.shape[2],
         batch_size=batch_size,
         num_epochs=num_epochs,
         num_layers=num_layers,
@@ -125,11 +168,12 @@ if __name__ == "__main__":
         learning_rate=learning_rate,
         lstm_dropout=lstm_dropout)
 
+    # m.train(train_sent, train_labels, train_token_lengths, None,
+    #         valid_sent, valid_labels, valid_token_lengths, None)
 
-    m.train(train_sent, train_labels, train_token_lengths, None,
-            valid_sent, valid_labels, valid_token_lengths, None)
-    # m.train(train_sent[::100], train_labels[::100], train_token_lengths[::100], None,
-    #         valid_sent[::100], valid_labels[::100], valid_token_lengths[::100], None)
+
+    m.train(sentences=wt_sent[:10], labels=wt_labs[:10], sentence_lengths=wt_sent_len[:10], words=ct_sent[:10],
+            v_sentences=wv_sent[:10], v_labels=wv_labs[:10], v_sentence_lengths=wv_sent_len[:10], v_words=cv_sent[:10])
     # m.train(train_sent[:1000], train_labels[:1000], train_token_lengths[:1000], None,
     #         valid_sent[:1000], valid_labels[:1000], valid_token_lengths[:1000], None)
     print('Done!')

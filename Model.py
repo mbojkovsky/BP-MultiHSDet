@@ -101,16 +101,22 @@ class Model:
 
     # CELL AND LAYER DEFINITIONS
     # CHAR LAYER
-    self.c_cell = lambda: tf.contrib.rnn.LSTMBlockCell(128)
-    self.c_cells_fw = [self.c_cell() for _ in range(1)]
-    self.c_cells_bw = [self.c_cell() for _ in range(1)]
+    # self.c_cell = lambda: tf.contrib.rnn.LSTMBlockCell(128)
 
-    self.c_outputs, _, _ = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(self.c_cells_fw,
-                                                                        self.c_cells_bw,
-                                                                        self.c_embedding,
-                                                                        dtype=tf.float32,
-                                                                        scope='char_level_lstm'
-                                                                        )
+    # self.c_outputs, _, _ = tf.nn.static_bidirectional_rnn(self.c_cell(),
+    #                                                       self.c_cell(),
+    #                                                       inputs=tf.unstack(self.c_embedding),
+    #                                                       dtype=tf.float32,
+    #                                                       scope='char_level_lstm'
+    #                                                       )
+
+    self.char_lstm = tf.contrib.cudnn_rnn.CudnnLSTM(num_layers=1,
+                                                    num_units=128,
+                                                    direction='bidirectional',
+                                                    dtype=tf.float32,
+                                                    name='char_level_lstm')
+
+    self.c_outputs, _ = self.char_lstm(self.c_embedding)
 
     print(self.c_outputs.shape, 'LSTM OUTPUTS')
 
@@ -129,8 +135,7 @@ class Model:
                                -1)
 
     # WORD LAYER
-    self.cell = lambda: tf.nn.rnn_cell.DropoutWrapper(tf.contrib.rnn.LSTMBlockCell(num_units),
-                                                      output_keep_prob=1 - 0.4)
+    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(num_units)
 
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]

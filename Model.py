@@ -66,61 +66,72 @@ class Model:
                                     trainable=False,
                                     name='Embedding_weight_dict')
 
+
+
     self.w_embedding = tf.nn.embedding_lookup(self.word_dic,
                                             self.sentences,
                                             name='Embeddings')
 
     # CHAR EMBEDDINGS
 
-    self.c_dic = tf.get_variable('char_embeddings',
-                                        shape=[self.char_embedder.weights.shape[0], self.char_embedder.weights.shape[1]],
-                                        trainable=True)
+    self.pad_emb = tf.get_variable(
+        name="pad_embedding",
+        initializer=tf.zeros(shape=[1, 16], dtype=tf.float32),
+        trainable=False)
 
-    self.c_embedding = tf.nn.embedding_lookup(self.c_dic,
-                                              self.words)
+    self.c_dic_init = tf.constant_initializer(self.char_embedder.weights)
 
-    # self.c_embedding = tf.one_hot(self.words,
-    #                               depth=self.char_embedder.weights.shape[0])
+    self.c_dic = tf.get_variable(shape=self.char_embedder.weights.shape,
+                                    initializer=self.c_dic_init,
+                                    trainable=True,
+                                    name='Char_weight_dict')
 
-    print(self.c_embedding.shape, 'C EMB') # BATCH x W_MAX_LEN x C_MAX_LEN x EMB_SIZE
+    print(self.words.shape, 'Input shape')
+
+    self.words_flat = tf.reshape(self.words, shape=[-1, c_max_len])
+
+    print(self.words_flat.shape, 'Reshaped input')
+
+    self.c_embedding = tf.nn.embedding_lookup(tf.concat([self.pad_emb, self.c_dic], axis=0),
+                                              self.words_flat,
+                                              name='Embeddings')
+
+    print(self.c_embedding.shape, 'Char emb shape')
+
 
     # CELL AND LAYER DEFINITIONS
     # CHAR LAYER
-    self.c_cell = lambda: tf.contrib.rnn.LSTMBlockCell(64)
+    self.c_cell = lambda: tf.contrib.rnn.LSTMBlockCell(128)
     self.c_cells_fw = [self.c_cell() for _ in range(1)]
     self.c_cells_bw = [self.c_cell() for _ in range(1)]
 
-    # self.c_flat = tf.reshape(self.c_embedding, shape=[-1, w_max_len, c_max_len * self.char_embedder.weights.shape[1]])
+    self.c_outputs, _, _ = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(self.c_cells_fw,
+                                                                        self.c_cells_bw,
+                                                                        self.c_embedding,
+                                                                        dtype=tf.float32,
+                                                                        scope='char_level_lstm'
+                                                                        )
 
-    self.c_flat = tf.reshape(self.c_embedding, shape=[-1, c_max_len, self.char_embedder.weights.shape[1]])
-    print(self.c_flat.shape, 'C EMB AFTER RESHAPE') # BATCH * W_MAX_LEN x C_MAX_LEN x EMB_SIZE
+    print(self.c_outputs.shape, 'LSTM OUTPUTS')
 
-    self.c_outputs, self.fw, self.bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-        self.c_cells_fw,
-        self.c_cells_bw,
-        self.c_flat,
-        dtype=tf.float32,
-        scope='char_level_lstm')
+    self.c_outputs_reshaped = tf.reshape(self.c_outputs, shape=[-1, w_max_len, c_max_len, self.c_outputs.shape[-1]])
+    print(self.c_outputs_reshaped.shape, 'Reshaped outputs') # BATCH x W_MAX_LEN x C_max_len x 128
 
-    # self.c_outputs_mean = tf.concat([self.fw[0][0], self.bw[0][0]], axis=-1)
-    self.c_outputs_mean = tf.math.reduce_mean(self.c_outputs, axis=1)
-    print(self.c_outputs_mean.shape) # BATCH * W_MAX_LEN x 128
-
-    self.c_outputs_reshaped = tf.reshape(self.c_outputs_mean, shape=[-1, w_max_len, self.c_outputs_mean.shape[1]])
-    print(self.c_outputs_reshaped.shape) # BATCH x W_MAX_LEN x 128
+    self.c_outputs_mean = tf.math.reduce_mean(self.c_outputs_reshaped, axis=2)
+    print(self.c_outputs_mean.shape, 'After reduce_mean') # BATCH x W_MAX_LEN x 128
 
     # concat char level features with extracted features from char level lstm
-
-    """
     self.w_emb_dropped = tf.layers.dropout(self.w_embedding,
                                            rate=0.5,
                                            training=self.training)
 
-    self.embedding = tf.concat([self.w_emb_dropped, self.c_outputs_reshaped],
+    self.embedding = tf.concat([self.w_emb_dropped, self.c_outputs_mean],
                                -1)
 
     # WORD LAYER
-    self.cell = lambda: tf.contrib.rnn.LSTMBlockCell(num_units)
+    self.cell = lambda: tf.nn.rnn_cell.DropoutWrapper(tf.contrib.rnn.LSTMBlockCell(num_units),
+                                                      output_keep_prob=1 - 0.4)
+
     self.cells_fw = [self.cell() for _ in range(self.num_layers)]
     self.cells_bw = [self.cell() for _ in range(self.num_layers)]
 
@@ -155,11 +166,11 @@ class Model:
 
     self.pooled = tf.reduce_sum(self.weighted_input,
                                 axis=1)
-"""
-    self.todo = tf.layers.dense(tf.layers.flatten(self.c_outputs_reshaped), units=256)
+
+    self.fcc = tf.layers.dense(self.pooled, units=256)
 
     # TOP-LEVEL SOFTMAX LAYER
-    self.logits = tf.layers.dense(self.todo,
+    self.logits = tf.layers.dense(self.fcc,
                                   units=2)
 
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
@@ -204,7 +215,6 @@ class Model:
                                                                         self.words: char[start:end],
                                                                         self.w_tokens_length: t_lens[start:end]
                                                                         })
-
           c_loss += c_l
 
         # validation between epochs

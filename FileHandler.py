@@ -26,8 +26,8 @@ class FileHandler():
     valid_labels_en, train_labels_en = self.extract_labels('en')
     valid_labels_es, train_labels_es = self.extract_labels('es')
 
-    return [0] * len(valid_labels_en) + [1] * len(valid_labels_es), \
-           [0] * len(train_labels_en) + [1] * len(train_labels_es)
+    return [0] * valid_labels_en.shape[0] + [1] * valid_labels_es.shape[0], \
+           [0] * train_labels_en.shape[0] + [1] * train_labels_es.shape[0]
 
   def extract_sentences(self, lang='en', write=False, concat=True):
     df = pd.read_csv('./raw_data/dev_' + lang + '.tsv', delimiter='\t')

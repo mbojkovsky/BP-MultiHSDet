@@ -10,11 +10,11 @@ class Model:
 
   def attention(self, inputs, scope_name):
       word_context = tf.get_variable(name='Att_' + scope_name,
-                                     shape=[64],
+                                     shape=[16],
                                      dtype=tf.float32)
 
       att_activations = tf.contrib.layers.fully_connected(inputs,
-                                                          64,
+                                                          16,
                                                           weights_initializer=identity_init)
 
       word_attn_vector = tf.reduce_sum(tf.multiply(att_activations,
@@ -35,17 +35,14 @@ class Model:
 
   def __init__(self,
                w_embedder,
-               c_embedder,
                max_len,
-               fcc,
-               fcc_size,
                batch_size=32,
                num_epochs=10,
                num_layers=2,
                num_units=256,
                learning_rate=0.001,
                lstm_dropout=0.4,
-               adv_lambda=0.2,
+               training=True
                ):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -58,15 +55,11 @@ class Model:
     self.num_layers = num_layers
     self.num_units = num_units
     self.lstm_dropout = lstm_dropout
-    self.adv_lambda = adv_lambda
+    self.training = training
 
     self.w_embedder = w_embedder
-    self.c_embedder = c_embedder
 
     # INPUTS
-
-    self.training_flag = tf.placeholder(tf.bool)
-
     self.x = tf.placeholder(tf.int32,
                             [None, max_len],
                             name='Sentences')
@@ -74,10 +67,6 @@ class Model:
     self.y = tf.placeholder(tf.int64,
                             [None],
                             name='HS_labels')
-
-    self.lang_labels = tf.placeholder(tf.int64,
-                                      [None],
-                                      name='Lang_labels')
 
     self.tokens_length = tf.placeholder(tf.int32,
                                         [None],
@@ -95,81 +84,56 @@ class Model:
                                             self.x,
                                             name='Word_level_Embeddings')
 
-    # Char level
-    self.c_elmo_init = tf.constant_initializer(self.c_embedder.weights)
+    # self.w_embedding = tf.layers.dropout(self.w_embedding, rate=0.2, training=self.training)
 
-    self.c_elmo_dic = tf.get_variable(shape=self.c_embedder.weights.shape,
-                                      initializer=self.c_elmo_init,
-                                      trainable=False,
-                                      name='Embedding_weight_dict')
+    self.conv = tf.layers.conv1d(self.w_embedding,
+                                       filters=100,
+                                       kernel_size=4,
+                                       activation=tf.nn.relu,
+                                       )
 
-    self.c_embedding = tf.nn.embedding_lookup(self.c_elmo_dic,
-                                              self.x,
-                                              name='Embeddings')
+    self.max_p_conv = tf.layers.max_pooling1d(self.conv,
+                                              pool_size=8,
+                                              strides=2)
 
-
-    # CELL AND LAYER DEFINITIONS
-    self.cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(self.num_units)
-
-    self.c_cells_fw = [self.cell() for _ in range(self.num_layers)]
-    self.c_cells_bw = [self.cell() for _ in range(self.num_layers)]
-
-    self.c_outputs, _ , _ = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-        self.c_cells_fw,
-        self.c_cells_bw,
-        self.c_embedding,
-        dtype=tf.float32,
-        sequence_length=self.tokens_length,
-        scope='char_lstm'
-    )
-
-    self.c_outputs = self.attention(self.c_outputs, 'char')
+    print(self.max_p_conv.shape)
 
     # multilayer lstm
-    self.cells_fw = [self.cell() for _ in range(self.num_layers)]
-    self.cells_bw = [self.cell() for _ in range(self.num_layers)]
+    self.char_lstm = tf.contrib.cudnn_rnn.CudnnLSTM(num_layers=num_layers,
+                                                    num_units=num_units,
+                                                    # direction='bidirectional',
+                                                    dtype=tf.float32,
+                                                    name='lstm')
 
-    self.outputs, self.output_state_fw, self.output_state_bw = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-                                                                          self.cells_fw,
-                                                                          self.cells_bw,
-                                                                          self.w_embedding,
-                                                                          dtype=tf.float32,
-                                                                          sequence_length=self.tokens_length,
-                                                                          scope='word_lstm'
-                                                                          )
+    self.outputs, _ = self.char_lstm(tf.transpose(self.max_p_conv, [1, 0, 2]))
+
+    # TODO dropout
 
     # ATTENTION
-    self.pooled = self.attention(self.outputs, 'word')
+    # implementacia podla https://www.cs.cmu.edu/~hovy/papers/16HLT-hierarchical-attention-networks.pdf
+
+    # self.pooled = self.attention(tf.transpose(self.outputs, [1, 0, 2]),  'word')
+
+    self.pooled = tf.reduce_max(tf.transpose(self.outputs, [1, 0, 2]),
+                                axis=1)
+
+    # self.pooled = tf.layers.dropout(self.pooled, rate=0.2, training=self.training)
 
     print(self.pooled.shape, 'After attention')
-
-    self.pooled = tf.concat([self.c_outputs, self.pooled],
-                             axis=1)
-
-    if fcc is True:
-        self.pooled = tf.contrib.layers.fully_connected(self.pooled,
-                                                        fcc_size,
-                                                        weights_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1),
-                                                        weights_initializer=identity_init)
-
-    print(self.pooled.shape, 'After fcc')
 
     # TOP-LEVEL SOFTMAX LAYER
     self.logits = tf.contrib.layers.fully_connected(self.pooled,
                                                     2,
-                                                    weights_regularizer=tf.contrib.layers.l2_regularizer(scale=0.4))
+                                                    weights_regularizer=tf.contrib.layers.l1_l2_regularizer(scale_l1=0.1,
+                                                                                                            scale_l2=0.1))
 
     self.ce_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits,
                                                                                  labels=self.y))
-    self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
-    with tf.control_dependencies(self.update_ops):
-        self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
+    self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+    self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
 
     self.pred = tf.nn.softmax(self.logits)
-
-    self.ret_pred = tf.argmax(self.pred, 1)
 
     self.correct_prediction = tf.equal(tf.argmax(self.pred, 1), self.y)
 
@@ -200,8 +164,7 @@ class Model:
 
           c_l, _ = sess.run([self.ce_loss, self.c_train_op], feed_dict={self.x: sen[start:end],
                                                                         self.y: lab[start:end],
-                                                                        self.tokens_length: t_lens[start:end],
-                                                                        self.training_flag: True})
+                                                                        self.tokens_length: t_lens[start:end]})
 
 
           c_loss += c_l
@@ -210,7 +173,7 @@ class Model:
         self.saver.save(sess, './chk/model_' + language)
         print('Epoch:', epoch, 'Classifier loss:', c_loss)
         print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, valid=False))
-        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths, valid=True), '\n')
+        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths), '\n')
 
 
   def test(self, t_sentences, t_labels, t_sentence_lengths, language='en', valid=True):
@@ -227,37 +190,14 @@ class Model:
         end = min(start + self.batch_size, t_sentences.shape[0])
         corr_pred, loss = sess.run([self.correct_prediction, self.ce_loss], feed_dict={self.x: t_sentences[start:end],
                                                                    self.tokens_length: t_sentence_lengths[start:end],
-                                                                   self.y: t_labels[start:end],
-                                                                    self.training_flag: True})
+                                                                   self.y: t_labels[start:end]})
         t_loss += loss
         correct += corr_pred.sum()
 
     if valid is True:
         print('VALID LOSS', t_loss)
     return correct / len(t_sentences)
-
-  def predict(self, sentences, sentence_lengths, language='en'):
-      iterations = np.arange(ceil(sentences.shape[0] / self.batch_size))
-      self.training = False
-      correct = None
-
-      with tf.Session() as sess:
-          self.saver.restore(sess, './chk/model_' + language)
-
-          for iteration in iterations:
-              start = iteration * self.batch_size
-              end = min(start + self.batch_size, sentences.shape[0])
-              pred = sess.run(self.ret_pred,
-                              feed_dict={self.x: sentences[start:end],
-                                         self.tokens_length: sentence_lengths[start:end],
-                                         self.training_flag: False})
-              if correct is None:
-                correct = np.array(pred)
-              else:
-                correct = np.append(correct, pred, axis=0)
-
-      return correct
-
+ 
   def shuffle(self, sentences, labels, lengths):
     indexes = np.arange(len(labels))
     np.random.shuffle(indexes)

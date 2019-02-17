@@ -29,6 +29,21 @@ class FileHandler():
     return [0] * valid_labels_en.shape[0] + [1] * valid_labels_es.shape[0], \
            [0] * train_labels_en.shape[0] + [1] * train_labels_es.shape[0]
 
+  def extract_id(self, lang='en'):
+    df = pd.read_csv('./raw_data/test_' + lang + '.tsv', delimiter='\t')
+    return df['id'].values
+
+  def extract_test(self, lang='en', write=False):
+    df = pd.read_csv('./raw_data/test_' + lang + '.tsv', delimiter='\t')
+    df_sent = self.tp.prepare_sentences(df.text, lang)
+
+    if write is True:
+      with open('test_data_' + lang, 'w') as file:
+        for sent in df_sent:
+          file.write('\t'.join(sent) + '\n')
+
+    return df_sent
+
   def extract_sentences(self, lang='en', write=False, concat=True):
     df = pd.read_csv('./raw_data/dev_' + lang + '.tsv', delimiter='\t')
     tdf = pd.read_csv('./raw_data/train_' + lang + '.tsv', delimiter='\t')

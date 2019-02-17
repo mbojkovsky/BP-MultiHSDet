@@ -12,7 +12,7 @@ class TextProcessor:
     def __init__(self):
         self.nlp_en = English()
         self.nlp_es = Spanish()
-        self.characters = "0123456789abcdefghijklmnopqrstuvwxyz!'" + \
+        self.characters = "0123456789abcdefghijklmnopqrstuvwxyz!' " + \
                           '#$%&()*+,-./:;<=>?@[\]^_`{|}~áéíóú¿¡üñçå¿¡€¢£¥°âãäåïðñöü‡œ‰”„'
         self.count = []
 

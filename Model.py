@@ -44,8 +44,6 @@ class Model:
                num_layers=2,
                num_units=256,
                learning_rate=0.001,
-               lstm_dropout=0.4,
-               adv_lambda=0.2,
                ):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -57,8 +55,6 @@ class Model:
     self.learning_rate = learning_rate
     self.num_layers = num_layers
     self.num_units = num_units
-    self.lstm_dropout = lstm_dropout
-    self.adv_lambda = adv_lambda
 
     self.w_embedder = w_embedder
     self.c_embedder = c_embedder
@@ -163,9 +159,8 @@ class Model:
                                                                                  labels=self.y))
     self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
-    with tf.control_dependencies(self.update_ops):
-        self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
+    self.c_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+    self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
 
     self.pred = tf.nn.softmax(self.logits)
 
@@ -191,7 +186,6 @@ class Model:
         # shuffle inputs
         sen, lab, t_lens = self.shuffle(sentences, labels, sentence_lengths)
 
-        # for loss printing (discriminator and classificator)
         c_loss = 0
 
         for iteration in iterations:
@@ -226,9 +220,9 @@ class Model:
         start = iteration * self.batch_size
         end = min(start + self.batch_size, t_sentences.shape[0])
         corr_pred, loss = sess.run([self.correct_prediction, self.ce_loss], feed_dict={self.x: t_sentences[start:end],
-                                                                   self.tokens_length: t_sentence_lengths[start:end],
-                                                                   self.y: t_labels[start:end],
-                                                                    self.training_flag: True})
+                                                                                       self.tokens_length: t_sentence_lengths[start:end],
+                                                                                       self.y: t_labels[start:end],
+                                                                                       self.training_flag: True})
         t_loss += loss
         correct += corr_pred.sum()
 

@@ -2,56 +2,8 @@
 from Model import Model
 from FileHandler import FileHandler
 import Embedder as e
-from hyperopt import fmin, tpe, hp
 from TextProcessor import TextProcessor
-from sklearn.metrics import f1_score
 import numpy as np
-
-valid_token_lengths = []
-train_token_lengths = []
-max_len = 0
-
-valid_sent = []
-train_sent = []
-
-valid_labels = []
-train_labels = []
-
-w_emb = None
-c_emb = None
-
-def hypertuning_cycle(params):
-    m = Model(
-        w_emb,
-        c_emb,
-        max_len,
-        batch_size=50,
-        num_epochs=6,
-        num_layers=params['num_layers'],
-        num_units=params['num_units'],
-        learning_rate=0.001,
-        fcc=True,
-        fcc_size=100
-    )
-
-    m.train(train_sent, train_labels, train_token_lengths, None, None, None)
-    val = m.predict(valid_sent, valid_labels, valid_token_lengths)
-
-    del m
-    ret = 1.0 - f1_score(valid_labels, val)
-    print(ret)
-    return ret
-
-def hypertuning(max_evals):
-    space = {
-             'num_layers': hp.choice('num_layers', [1, 2]),
-             'num_units': hp.choice('num_units', [32, 64, 80, 100, 128]),
-             'l1_scale': hp.choice('l1_scale', [0.0, 0.1, 0.2, 0.4]),
-             'l2_scale': hp.choice('l2_scale', [0.0, 0.1, 0.2, 0.4])
-             }
-
-    best = fmin(hypertuning_cycle, space, algo=tpe.suggest, max_evals=max_evals)
-    print(best)
 
 def write(arr, lang='en'):
     with open('result_' + lang, 'w') as file:
@@ -111,7 +63,7 @@ if __name__ == "__main__":
     batch_size = 32
     num_epochs = 2
     num_layers = 1
-    num_units = 16
+    num_units = 32
     learning_rate = 0.001
 
     m = Model(
@@ -123,7 +75,7 @@ if __name__ == "__main__":
             num_layers=num_layers,
             num_units=num_units,
             learning_rate=learning_rate,
-            fcc=False,
+            fcc=True,
             fcc_size=32)
 
     m.train(train_sent, train_labels, train_token_lengths,

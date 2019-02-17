@@ -12,7 +12,8 @@ class TextProcessor:
     def __init__(self):
         self.nlp_en = English()
         self.nlp_es = Spanish()
-        self.characters = ''.join(set(string.printable.lower())) + 'áéíóú¿¡üñçå¿¡€¢£¥°âãäåïðñöü‡œ‰”„'
+        self.characters = "0123456789abcdefghijklmnopqrstuvwxyz!' " + \
+                          '#$%&()*+,-./:;<=>?@[\]^_`{|}~áéíóú¿¡üñçå¿¡€¢£¥°âãäåïðñöü‡œ‰”„'
         self.count = []
 
     def get_char_list(self):
@@ -61,14 +62,13 @@ class TextProcessor:
             tweet = ''.join(list(filter(lambda x: x in self.characters, tweet)))
             basic_t = [str(token) for token in self.nlp_es(tweet) if not token.is_stop]
 
-        # max 48 chars per word
-        basic_t = [w[:48] for w in basic_t]
-
         # vymazem vsetky samostatne symboly
         filtered_lowercased = [w for w in basic_t if re.match(r'[a-zA-Z0-9]+', w)]
 
-        # replace numbers with <number>
-        finished = list(map(lambda x: re.sub(r"^[.]?([0-9]+[.,]?)+\b", '<number>', x), filtered_lowercased))
+        # replace numbers with number
+        finished = list(map(lambda x: re.sub(r"^[.]?([0-9]+[.,]?)+\b", 'number', x), filtered_lowercased))
+
+        finished = list(map(lambda x: x[:32], finished))
 
         self.count.append(len(finished))
 

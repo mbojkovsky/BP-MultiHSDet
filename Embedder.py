@@ -8,12 +8,18 @@ class Embedder:
         self.index = 1
 
     def create_embeddings(self, list):
-        self.weights = np.random.normal(loc=0, scale=0.3, size=(len(list) + 1, self.dim))
-        self.word2idx = dict(zip(list, range(1, len(list))))
+        self.weights = np.random.normal(loc=0, scale=0.2, size=(len(list) + 1, self.dim))
+        self.word2idx = dict(zip(list, range(1, len(list) + 1)))
 
     def load_embeddings(self, file_name, sep=' '):
         weights = []
-        weights.append(np.zeros(self.dim))
+
+        if self.weights is None:
+            # padding
+            weights.append(np.zeros(self.dim))
+            # oov
+            weights.append(np.random.normal(loc=0, scale=0.1, size=(self.dim)))
+
         with open('./data/' + file_name, 'r') as file:
             for line in file:
                 values = line.split(sep)
@@ -28,7 +34,7 @@ class Embedder:
             self.weights = np.append(self.weights, weights, axis=0)
 
     def create_indexed_sentences(self, sentences, pad_size=70):
-        indexed = list(map(lambda sent: [self.word2idx.get(word, 0) for word in sent], sentences))
+        indexed = list(map(lambda sent: [self.word2idx.get(word, 1) for word in sent], sentences))
         indexed = [i + [0] * (pad_size - len(i)) for i in indexed]
         return np.array(indexed)
 

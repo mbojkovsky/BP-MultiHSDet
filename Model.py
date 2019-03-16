@@ -2,9 +2,16 @@ import tensorflow as tf
 import numpy as np
 from math import ceil
 import os
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 def identity_init(shape, dtype, partition_info=None):
     return tf.eye(shape[0], shape[1], dtype=dtype)
+
+def print_scores(str, pred, real):
+    print(str, ' acc: ', accuracy_score(real, pred))
+    print(str, ' rec: ', recall_score(real, pred))
+    print(str, ' pre: ', precision_score(real, pred))
+    print(str, ' f1: ', f1_score(real, pred))
 
 class Model:
 
@@ -81,37 +88,42 @@ class Model:
                                               self.x,
                                               name='Word_level_Embeddings')
 
-    if use_CNN is True:
-        self.conv = tf.layers.conv1d(self.w_embedding,
-                                     filters=100,
-                                     kernel_size=4,
-                                     activation=tf.nn.relu,
-                                    )
+    # if use_CNN is True:
+    #     self.conv = tf.layers.conv1d(self.w_embedding,
+    #                                  filters=100,
+    #                                  kernel_size=4,
+    #                                  activation=tf.nn.relu,
+    #                                 )
+    #
+    #     self.lstm_input = tf.layers.max_pooling1d(self.conv,
+    #                                           pool_size=4,
+    #                                           strides=4)
+    #
+    #     mode = 'unidirectional'
+    #
+    # else:
 
-        self.lstm_input = tf.layers.max_pooling1d(self.conv,
-                                              pool_size=4,
-                                              strides=4)
+    self.lstm_input = self.w_embedding
+    mode = 'bidirectional'
 
-    else:
-        self.lstm_input = self.w_embedding
-
-    self.char_lstm = tf.contrib.cudnn_rnn.CudnnLSTM(num_layers=num_layers,
+    self.lstm = tf.contrib.cudnn_rnn.CudnnLSTM(num_layers=num_layers,
                                                     num_units=num_units,
-                                                    direction='bidirectional',
+                                                    direction=mode,
                                                     dtype=tf.float32,
                                                     name='lstm')
 
-    self.outputs, _ = self.char_lstm(tf.transpose(self.lstm_input,
+    self.outputs, _ = self.lstm(tf.transpose(self.lstm_input,
                                                   [1, 0, 2]))
 
-    if use_CNN is True:
-        self.pooled = tf.reduce_max(tf.transpose(self.outputs,
+    # if use_CNN is True:
+    self.pooled = tf.reduce_max(tf.transpose(self.outputs,
                                                  [1, 0, 2]),
                                 axis=1)
 
-    else:
-        self.pooled = self.attention(tf.transpose(self.outputs,
-                                                  [1, 0, 2]))
+    # else:
+    #     self.pooled = self.attention(tf.transpose(self.outputs,
+    #                                               [1, 0, 2]),
+    #                                  'lstm')
 
 
 
@@ -128,6 +140,7 @@ class Model:
     self.c_train_op = self.c_optimizer.minimize(self.ce_loss)
 
     self.pred = tf.nn.softmax(self.logits)
+    self.ret_pred = tf.argmax(self.pred, 1)
 
     self.correct_prediction = tf.equal(tf.argmax(self.pred, 1), self.y)
 
@@ -165,9 +178,10 @@ class Model:
         # validation between epochs
         self.saver.save(sess, './chk/model_' + language)
         print('Epoch:', epoch, 'Classifier loss:', c_loss)
-        print('TRAIN ACC:', self.test(sentences, labels, sentence_lengths, valid=False))
-        print('VALID ACC', self.test(v_sentences, v_labels, v_sentence_lengths), '\n')
+        self.test(sentences, labels, sentence_lengths, valid=False)
+        self.test(v_sentences, v_labels, v_sentence_lengths, valid=True)
 
+        print()
 
   def test(self, t_sentences, t_labels, t_sentence_lengths, language='en', valid=True):
     iterations = np.arange(ceil(t_sentences.shape[0] / self.batch_size))
@@ -175,23 +189,26 @@ class Model:
 
     with tf.Session() as sess:
       self.saver.restore(sess, './chk/model_' + language)
-      correct = 0
+      correct = np.array([])
       t_loss = 0
 
       for iteration in iterations:
         start = iteration * self.batch_size
         end = min(start + self.batch_size, t_sentences.shape[0])
-        corr_pred, loss = sess.run([self.correct_prediction, self.ce_loss],
+        corr_pred, loss = sess.run([self.ret_pred, self.ce_loss],
                                    feed_dict={self.x: t_sentences[start:end],
                                               self.tokens_length: t_sentence_lengths[start:end],
                                               self.y: t_labels[start:end]})
         t_loss += loss
-        correct += corr_pred.sum()
+        correct = np.append(correct, corr_pred)
 
-    if valid is True:
-        print('VALID LOSS', t_loss)
+      # model evaluation
+      if valid is True:
+        print('Classifier loss on valid:', t_loss)
+        print_scores('VALID', correct, t_labels)
 
-    return correct / len(t_sentences)
+      else:
+        print_scores('TEST', correct, t_labels)
  
   def shuffle(self, sentences, labels, lengths):
     indexes = np.arange(len(labels))

@@ -24,19 +24,18 @@ class Model:
                                                           16,
                                                           weights_initializer=identity_init)
 
-      word_attn_vector = tf.reduce_sum(tf.multiply(att_activations,
-                                                        word_context),
-                                            axis=2,
-                                            keepdims=True)
+      word_attn_vector = tf.reduce_sum(tf.multiply(att_activations, word_context),
+                                       axis=2,
+                                       keepdims=True)
 
       att_weights = tf.nn.softmax(word_attn_vector,
-                                       axis=1)
+                                  axis=1)
 
       weighted_input = tf.multiply(inputs,
-                                        att_weights)
+                                   att_weights)
 
       pooled = tf.reduce_sum(weighted_input,
-                            axis=1)
+                             axis=1)
 
       return pooled
 
@@ -107,17 +106,17 @@ class Model:
     mode = 'bidirectional'
 
     self.lstm = tf.contrib.cudnn_rnn.CudnnLSTM(num_layers=num_layers,
-                                                    num_units=num_units,
-                                                    direction=mode,
-                                                    dtype=tf.float32,
-                                                    name='lstm')
+                                               num_units=num_units,
+                                               direction=mode,
+                                               dtype=tf.float32,
+                                               name='lstm')
 
     self.outputs, _ = self.lstm(tf.transpose(self.lstm_input,
-                                                  [1, 0, 2]))
+                                             [1, 0, 2]))
 
     # if use_CNN is True:
     self.pooled = tf.reduce_max(tf.transpose(self.outputs,
-                                                 [1, 0, 2]),
+                                             [1, 0, 2]),
                                 axis=1)
 
     # else:
